@@ -25,14 +25,14 @@ jobs:
       - name: Run API Tests
         id: run-tests
         run: |
-          newman run ./postman/jsonplaceholder-tests.json \
+          newman run ./tests/collections/jsonplaceholder-dev.json \
             --reporters cli,htmlextra,json \
             --reporter-htmlextra-export ./newman/report.html \
             --reporter-json-export ./newman/report.json
         continue-on-error: true
       
       - name: Save Test Results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: newman-test-results
           path: ./newman
