@@ -61,15 +61,14 @@ jobs:
           
           # For PR comment
           echo "summary=✅ **API Tests**: $TEST_PASSED/$TEST_TOTAL tests passed across $TOTAL requests" >> $GITHUB_OUTPUT
-      
-     - name: Find Comment
-       uses: peter-evans/find-comment@v3
-       if: github.event_name == 'pull_request'
-       id: find-comment
-       with:
-        issue-number: ${{ github.event.pull_request.number }}
-        comment-author: 'github-actions[bot]'
-        body-includes: API Test Results
+
+      - name: Find Comment
+        uses: peter-evans/find-comment@v3
+        id: find-comment
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: Build output          
       
       - name: Create or Update Comment
         uses: peter-evans/create-or-update-comment@v4
@@ -90,7 +89,6 @@ jobs:
             [View full HTML report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
             </details>
           edit-mode: replace
-          reactions: rocket
           
       - name: Check Test Status
         if: steps.run-tests.outcome == 'failure'
