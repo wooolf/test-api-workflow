@@ -65,21 +65,20 @@ jobs:
           failed-report: true
           flaky-report: true
           skipped-report: true
+          # Add custom collection summary report
+          custom-report: true
+          template-path: './tests/templates/collection-summary.hbs'
         if: always()
       
-      # Add detailed report to PR comment
+      # Add detailed report to PR comment with collection summaries
       - name: Publish Test Status Report to PR
         uses: ctrf-io/github-test-reporter@v1
         with:
           report-path: './ctrf/combined-report.json'
           pull-request: true
-          pull-request-report: true
-          summary-report: false
-          test-report: false
-          failed-report: true
-          flaky-report: true
-          skipped-report: true
-          title: 'API Test Results'
+          template-path: './tests/templates/collection-summary.hbs'
+          custom-report: true
+          title: 'API Test Results by Collection'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         if: always() && github.event_name == 'pull_request'
