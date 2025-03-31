@@ -1,55 +1,34 @@
-## API Test Results by Collection
+### Summary:
+| **Tests 📝** | **Passed ✅** | **Failed ❌** | **Skipped ⏭️** |
+| --- | --- | --- | --- |
+| {{ctrf.summary.tests}} | {{ctrf.summary.passed}} | {{ctrf.summary.failed}} | {{ctrf.summary.skipped}} |
 
-### Overall Summary
-**{{results.summary.passed}}** of **{{results.summary.tests}}** tests passed ({{percentFormat (percent results.summary.passed results.summary.tests)}})
-
-| Collection | Tests | Passed | Failed | Flaky | Skipped | Pending | Other | Duration |
-|------------|-------|--------|--------|-------|---------|---------|-------|----------|
-{{#each results.collections}}
-| **{{name}}** | {{total}} | {{passed}} {{#if passed}}✅{{/if}} | {{failed}} {{#if failed}}❌{{/if}} | {{flaky}} {{#if flaky}}🍂{{/if}} | {{skipped}} {{#if skipped}}⏭️{{/if}} | {{pending}} {{#if pending}}⏳{{/if}} | {{other}} {{#if other}}❓{{/if}} | {{duration}}ms |
-{{/each}}
-
-{{#if (gt results.summary.failed 0)}}
-### Failed Tests
-| Collection | Test | Message |
-|------------|------|---------|
-{{#each results.tests}}
-{{#if (eq status "failed")}}
-| {{collectionName}} | {{originalName}} | {{message}} |
-{{/if}}
-{{/each}}
-{{/if}}
-
-{{#if (gt results.summary.flaky 0)}}
-### Flaky Tests
-| Collection | Test | Message |
-|------------|------|---------|
-{{#each results.tests}}
-{{#if flaky}}
-| {{collectionName}} | {{originalName}} | {{message}} |
-{{/if}}
-{{/each}}
+### Failed Tests:
+{{#if (anyFailedTests ctrf.tests)}}
+<table>
+  <thead>
+    <tr>
+      <th>Failed Tests {{getCtrfEmoji "failed"}}</th>
+      <th>Fail Message</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#each ctrf.tests}}
+      {{#if (eq status "failed")}}
+      <tr>
+        <td>{{getCtrfEmoji "failed"}} {{name}}</td>
+        <td>
+          {{#if message}}
+            {{~{formatMessage message}}}
+          {{else}}
+            No failure message
+          {{/if}}
+        </td>
+      </tr>
+      {{/if}}
+    {{/each}}
+  </tbody>
+</table>
 {{else}}
-### Flaky Tests
-No flaky tests detected ✨
+<p>No failed tests ✨</p>
 {{/if}}
-
-{{#if (or (gt results.summary.pending 0) (gt results.summary.skipped 0) (gt results.summary.other 0))}}
-### Other Test Statuses
-| Collection | Test | Status |
-|------------|------|--------|
-{{#each results.tests}}
-{{#if (eq status "pending")}}
-| {{collectionName}} | {{originalName}} | Pending ⏳ |
-{{/if}}
-{{#if (eq status "skipped")}}
-| {{collectionName}} | {{originalName}} | Skipped ⏭️ |
-{{/if}}
-{{#if (eq status "other")}}
-| {{collectionName}} | {{originalName}} | Other ❓ |
-{{/if}}
-{{/each}}
-{{/if}}
-
----
-✨ [View full test report]({{env.GITHUB_SERVER_URL}}/{{env.GITHUB_REPOSITORY}}/actions/runs/{{env.GITHUB_RUN_ID}})
