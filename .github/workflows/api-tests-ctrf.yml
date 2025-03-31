@@ -1,99 +1,184 @@
-name: API Tests with CTRF Test Reporter
+name: API Tests with CTRF Test Reporter (Per Collection)
 
 on:
   pull_request:
     branches: [main, master]
   workflow_dispatch:
 
-# Add permissions needed for PR comments
+# Add permissions needed for PR comments and summary updates
 permissions:
   contents: read
   pull-requests: write
+  actions: read # Needed for job summaries
+  checks: write # Needed if using status-check: true
 
 jobs:
-  api-tests:
+  # Job to find collection files and make them available to the matrix
+  prepare-collections:
     runs-on: ubuntu-latest
+    outputs:
+      collections: ${{ steps.find-collections.outputs.collections }}
+      collections_count: ${{ steps.find-collections.outputs.collections_count }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
+      - name: Find Collection Files
+        id: find-collections
+        run: |
+          # Create dummy files if tests/collections doesn't exist or is empty for testing
+          # mkdir -p ./tests/collections
+          # touch ./tests/collections/dummy1.json ./tests/collections/dummy2.json
+          
+          collections_list=$(find ./tests/collections -name "*.json" -type f | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          collections_count=$(echo "$collections_list" | jq 'length')
+          
+          if [ "$collections_count" -eq 0 ]; then
+            echo "WARNING: No collection files found in ./tests/collections"
+            # Output empty JSON array to avoid errors in the matrix strategy
+            collections_list="[]"
+          fi
+          
+          echo "collections=${collections_list}" >> $GITHUB_OUTPUT
+          echo "collections_count=${collections_count}" >> $GITHUB_OUTPUT
+          echo "Found $collections_count collection(s):"
+          echo "$collections_list" | jq -c '.[]? // empty' # Print each found collection or nothing if empty
+
+  # Job to run tests for each collection using a matrix
+  api-tests:
+    needs: prepare-collections
+    if: ${{ needs.prepare-collections.outputs.collections_count > 0 }} # Only run if collections were found
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # Ensure all collections are tested even if one fails
+      matrix:
+        collection_path: ${{ fromJSON(needs.prepare-collections.outputs.collections) }}
+
+    # Dynamic job name based on the collection being tested
+    name: Test ${{ matrix.collection_path }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
-      
+          node-version: '18' # Using a slightly more recent LTS version
+
       - name: Install Newman and Reporters
         run: |
           npm install -g newman
           npm install -g newman-reporter-htmlextra
           npm install -g newman-reporter-ctrf-json
-      
-      - name: Create Directories
-        run: |
-          mkdir -p ./tests/collections
-          mkdir -p ./newman
-          mkdir -p ./ctrf
 
-      - name: Find Collection Files
-        id: find-collections
+      - name: Extract Collection Name
+        id: extract-name
         run: |
-          echo "collections=$(find ./tests/collections -name "*.json" -type f | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> $GITHUB_OUTPUT
-      
-      - name: Run API Tests with CTRF Reporter
-        id: run-tests
+          collection_file=$(basename "${{ matrix.collection_path }}")
+          collection_name="${collection_file%.json}" # Remove .json extension
+          echo "collection_name=$collection_name" >> $GITHUB_OUTPUT
+          # Sanitize name for directory/artifact creation
+          sanitized_name=$(echo "$collection_name" | tr -cd '[:alnum:]_-' | sed 's/^[^a-zA-Z0-9]*//;s/[^a-zA-Z0-9]*$//')
+          if [ -z "$sanitized_name" ]; then sanitized_name="default_collection"; fi # Handle cases where sanitization results in empty string
+          echo "sanitized_name=$sanitized_name" >> $GITHUB_OUTPUT
+
+      - name: Create Directories for Collection
+        id: create-dirs
         run: |
-          # Read collections from find step
-          COLLECTIONS='${{ steps.find-collections.outputs.collections }}'
-          
-          # Process each collection
-          echo $COLLECTIONS | jq -c '.[]' | while read -r collection; do
-            # Remove quotes from the collection path
-            collection=$(echo $collection | tr -d '"')
-            # Extract just the filename without path and extension
-            collection_name=$(basename "$collection" .json)
-            
-            echo "Running tests for collection: $collection_name"
-            
-            # Create directory for this collection's reports
-            mkdir -p "./newman/$collection_name"
-            mkdir -p "./ctrf/$collection_name"
-            
-            # Run Newman with collection-specific output paths
-            newman run "$collection" \
-              --reporters cli,htmlextra,ctrf-json \
-              --reporter-htmlextra-export "./newman/$collection_name/report.html" \
-              --reporter-ctrf-json-output-dir "./ctrf/$collection_name" \
-              --reporter-ctrf-json-output-file "ctrf-report.json" \
-              --reporter-ctrf-json-build-name "API Tests - $collection_name" \
-              --reporter-ctrf-json-app-name "API Testing Workflow" || true
-          done
-        shell: bash
-      
-      - name: Save Test Reports as Artifacts
+          collection_name="${{ steps.extract-name.outputs.sanitized_name }}"
+          mkdir -p "./newman/$collection_name"
+          mkdir -p "./ctrf/$collection_name"
+          echo "newman_dir=./newman/$collection_name" >> $GITHUB_OUTPUT
+          echo "ctrf_dir=./ctrf/$collection_name" >> $GITHUB_OUTPUT
+
+      - name: Run API Tests with CTRF Reporter for ${{ steps.extract-name.outputs.collection_name }}
+        # Use continue-on-error so that reporting steps run even if tests fail
+        continue-on-error: true
+        id: run-tests # Give this step an ID to check its outcome later
+        run: |
+          collection_path="${{ matrix.collection_path }}"
+          collection_name_orig="${{ steps.extract-name.outputs.collection_name }}" # Use original name for report metadata
+          newman_dir="${{ steps.create-dirs.outputs.newman_dir }}"
+          ctrf_dir="${{ steps.create-dirs.outputs.ctrf_dir }}"
+
+          echo "Running tests for collection: $collection_name_orig ($collection_path)"
+
+          # Ensure the CTRF directory exists before running newman
+          mkdir -p "$ctrf_dir"
+
+          newman run "$collection_path" \
+            --reporters cli,htmlextra,ctrf-json \
+            --reporter-htmlextra-export "$newman_dir/report.html" \
+            --reporter-ctrf-json-output-dir "$ctrf_dir" \
+            --reporter-ctrf-json-output-file "ctrf-report.json" \
+            --reporter-ctrf-json-build-name "API Tests - $collection_name_orig" \
+            --reporter-ctrf-json-app-name "API Testing Workflow - ${{ github.repository }}"
+            # Removed '|| true', rely on continue-on-error for the step
+
+      - name: Save Test Report Artifacts for ${{ steps.extract-name.outputs.collection_name }}
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports
+          name: test-report-${{ steps.extract-name.outputs.sanitized_name }} # Unique artifact name per collection
           path: |
-            ./newman/
-            ./ctrf/
-      
-      # Using the ctrf-io/github-test-reporter action
-      - name: Publish Test Report to Summary
-        uses: ctrf-io/github-test-reporter@v1
-        with:
-          report-path: './ctrf/**/*.json'
-          summary-report: true
-          test-report: true
-          failed-report: true
+            ${{ steps.create-dirs.outputs.newman_dir }}/report.html
+            ${{ steps.create-dirs.outputs.ctrf_dir }}/ctrf-report.json
+          # Default retention-days is fine unless you need longer/shorter
+        # Always upload artifacts, even if tests failed
         if: always()
-      
-      # Post results to PR comment
-      - name: Publish Test Report to PR
+
+      # --- Reporting Steps ---
+
+      - name: Publish Test Report to Summary for ${{ steps.extract-name.outputs.collection_name }}
         uses: ctrf-io/github-test-reporter@v1
         with:
-          report-path: './ctrf/**/*.json'
-          pull-request-report: true
-          pull-request: true
+          # Point to the specific report file for this matrix job
+          report-path: '${{ steps.create-dirs.outputs.ctrf_dir }}/ctrf-report.json'
+
+          # Report Content Configuration (choose which sections to include)
+          summary-report: true       # Overall summary counts
+          test-report: true          # List of all tests and their status
+          failed-report: true        # List of failed tests
+          # flaky-report: true       # Optional: List flaky tests if your framework identifies them
+          # skipped-report: true     # Optional: List skipped tests
+          # slowest-report: true     # Optional: Show slowest tests (e.g., top 5)
+
+          # Behavior
+          summary: true              # Post to Job Summary (default)
+          title: '📊 Results for ${{ steps.extract-name.outputs.collection_name }}' # Set a distinct title for this collection's report section
+          # annotate: true           # Add annotations for failures (default)
+          # status-check: true       # Optional: Create a status check per collection
+          # status-check-name: 'Tests: ${{ steps.extract-name.outputs.collection_name }}' # Name for the status check if enabled
+        # Always run the reporting step to ensure results are posted
+        if: always()
+
+      - name: Publish Test Report to PR for ${{ steps.extract-name.outputs.collection_name }}
+        uses: ctrf-io/github-test-reporter@v1
+        with:
+          # Point to the specific report file for this matrix job
+          report-path: '${{ steps.create-dirs.outputs.ctrf_dir }}/ctrf-report.json'
+
+          # Report Content Configuration (can differ from summary if desired)
+          pull-request-report: true  # Enable the content generation for PR comments
+          summary-report: true       # Include summary counts in PR comment
+          failed-report: true        # Include failed tests in PR comment
+          # test-report: false       # Maybe omit the full test list in PR comment for brevity? (optional)
+
+          # Behavior
+          pull-request: true         # <<-- ESSENTIAL: Enable commenting on the Pull Request
+          title: '📊 Results for ${{ steps.extract-name.outputs.collection_name }}' # Set a distinct title for this collection's report section in the comment
+          # update-comment: true     # Optional: Try to update an existing comment from this action (requires comment-tag)
+          # comment-tag: 'ctrf-report-${{ steps.extract-name.outputs.sanitized_name }}' # Optional: Unique tag per collection for update-comment
+          # on-fail-only: false      # Comment even if tests pass (default)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Only run on pull_request events and always attempt reporting
         if: always() && github.event_name == 'pull_request'
+
+      # Fail the job if Newman failed (after reporting)
+      # This ensures the matrix job reflects the test failure status in the Actions UI checkmark
+      - name: Check Newman exit status
+        if: steps.run-tests.outcome == 'failure'
+        run: |
+          echo "Newman execution failed for collection: ${{ steps.extract-name.outputs.collection_name }}"
+          exit 1
