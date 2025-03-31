@@ -22,8 +22,17 @@ OVERALL_STATUS=0
 # Process each collection
 for collection in "${COLLECTIONS[@]}"; do
   # Extract collection name without path and extension
+  COLLECTION_FILE=$(basename "$collection")
   COLLECTION_NAME=$(basename "$collection" .json)
-  echo "Running collection: $COLLECTION_NAME"
+  
+  # Extract the actual collection name from the JSON file
+  ACTUAL_NAME=$(cat "$collection" | grep -o '"name": *"[^"]*"' | head -1 | cut -d'"' -f4)
+  
+  if [ -z "$ACTUAL_NAME" ]; then
+    ACTUAL_NAME=$COLLECTION_NAME
+  fi
+  
+  echo "Running collection: $ACTUAL_NAME (file: $COLLECTION_FILE)"
   
   # Run the collection with Newman
   newman run "$collection" \
@@ -31,10 +40,10 @@ for collection in "${COLLECTIONS[@]}"; do
     --reporter-htmlextra-export "./newman/$COLLECTION_NAME-report.html" \
     --reporter-ctrf-json-output-dir ./ctrf \
     --reporter-ctrf-json-output-file "$COLLECTION_NAME-report.json" \
-    --reporter-ctrf-json-build-name "API Tests - $COLLECTION_NAME" \
-    --reporter-ctrf-json-app-name "API Testing Demo" || OVERALL_STATUS=$?
+    --reporter-ctrf-json-build-name "API Tests - $ACTUAL_NAME" \
+    --reporter-ctrf-json-app-name "$ACTUAL_NAME" || OVERALL_STATUS=$?
   
-  echo "Completed collection: $COLLECTION_NAME with status: $?"
+  echo "Completed collection: $ACTUAL_NAME with status: $?"
 done
 
 # Return overall status
