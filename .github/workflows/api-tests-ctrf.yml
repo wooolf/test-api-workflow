@@ -1,0 +1,60 @@
+name: API Tests with CTRF Reporting
+
+on:
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  api-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+      
+      - name: Install Newman and Reporters
+        run: |
+          npm install -g newman
+          npm install -g newman-reporter-htmlextra
+          npm install -g newman-reporter-ctrf-json
+      
+      - name: Create Directories
+        run: |
+          mkdir -p ./tests/collections
+          mkdir -p ./newman
+          mkdir -p ./ctrf
+      
+      - name: Run API Tests with CTRF Reporter
+        id: run-tests
+        run: |
+          newman run ./tests/collections/jsonplaceholder-dev.json \
+            --reporters cli,htmlextra,ctrf-json \
+            --reporter-htmlextra-export ./newman/report.html \
+            --reporter-ctrf-json-output-dir ./ctrf \
+            --reporter-ctrf-json-output-file ctrf-report.json \
+            --reporter-ctrf-json-build-name "API Tests" \
+            --reporter-ctrf-json-app-name "API Testing Workflow"
+        continue-on-error: true
+      
+      - name: Save Test Reports as Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            ./newman/
+            ./ctrf/
+      
+      - name: Publish Test Summary Results
+        run: npx github-actions-ctrf ./ctrf/ctrf-report.json
+      
+      - name: Publish Detailed Test Results
+        run: npx github-actions-ctrf ./ctrf/ctrf-report.json --report test
+
+      - name: Publish Failed Tests Report
+        run: npx github-actions-ctrf ./ctrf/ctrf-report.json --report failed
+        if: always()
