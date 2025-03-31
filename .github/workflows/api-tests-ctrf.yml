@@ -1,4 +1,4 @@
-name: API Tests with CTRF Reporting
+name: API Tests with CTRF Test Reporter
 
 on:
   pull_request:
@@ -54,71 +54,23 @@ jobs:
             ./newman/
             ./ctrf/
       
-      - name: Publish Test Summary Results
-        run: npx github-actions-ctrf ./ctrf/ctrf-report.json
-      
-      - name: Publish Detailed Test Results
-        run: npx github-actions-ctrf ./ctrf/ctrf-report.json --report test
-
-      - name: Publish Failed Tests Report
-        run: npx github-actions-ctrf ./ctrf/ctrf-report.json --report failed
+      # Using the ctrf-io/github-test-reporter action
+      - name: Publish Test Report to Summary
+        uses: ctrf-io/github-test-reporter@v1
+        with:
+          report-path: './ctrf/*.json'
+          summary-report: true
+          test-report: true
+          failed-report: true
         if: always()
-        
-      # Add permissions for PR comments
-      - name: Check if running in PR context
-        id: check-pr
-        run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            echo "is_pr=true" >> $GITHUB_OUTPUT
-            echo "pr_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
-          else
-            echo "is_pr=false" >> $GITHUB_OUTPUT
-          fi
       
-      # Comment summary on PR
-      - name: Comment test results on PR
-        if: steps.check-pr.outputs.is_pr == 'true'
-        run: |
-          # Create header for PR comment
-          echo "## API Test Results" > pr-comment.md
-          echo "Results from automated API tests run on $(date)" >> pr-comment.md
-          echo "" >> pr-comment.md
-          
-          # Generate summary markdown and append to PR comment
-          npx github-actions-ctrf ./ctrf/ctrf-report.json --report summary --output-file summary.md
-          cat summary.md >> pr-comment.md
-          
-          # Add failed tests section if any tests failed
-          TEST_FAILED=$(jq '.results.summary.failed' ./ctrf/ctrf-report.json)
-          if [ "$TEST_FAILED" -gt "0" ]; then
-            echo "" >> pr-comment.md
-            echo "### Failed Tests" >> pr-comment.md
-            npx github-actions-ctrf ./ctrf/ctrf-report.json --report failed --output-file failed.md
-            cat failed.md >> pr-comment.md
-          fi
-          
-          # Add link to full report in GitHub Actions
-          echo "" >> pr-comment.md
-          echo "---" >> pr-comment.md
-          echo "✨ [View detailed test results](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> pr-comment.md
-          
-          # Create or update the PR comment
-          PR_NUMBER="${{ steps.check-pr.outputs.pr_number }}"
-          
-          # Check if comment already exists
-          COMMENT_ID=$(gh api \
-            repos/${{ github.repository }}/issues/${PR_NUMBER}/comments \
-            --jq '.[] | select(.body | contains("## API Test Results")) | .id')
-          
-          if [ -z "$COMMENT_ID" ]; then
-            # Create new comment
-            gh pr comment ${PR_NUMBER} --body-file pr-comment.md
-          else
-            # Update existing comment
-            gh api \
-              repos/${{ github.repository }}/issues/comments/${COMMENT_ID} \
-              -X PATCH \
-              -F body=@pr-comment.md
-          fi
+      # Post results to PR comment
+      - name: Publish Test Report to PR
+        uses: ctrf-io/github-test-reporter@v1
+        with:
+          report-path: './ctrf/*.json'
+          pull-request-report: true
+          pull-request: true
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: always() && github.event_name == 'pull_request'
