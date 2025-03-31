@@ -34,18 +34,40 @@ jobs:
           mkdir -p ./newman
           mkdir -p ./ctrf
 
+      - name: Find Collection Files
+        id: find-collections
+        run: |
+          echo "collections=$(find ./tests/collections -name "*.json" -type f | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> $GITHUB_OUTPUT
       
       - name: Run API Tests with CTRF Reporter
         id: run-tests
         run: |
-          newman run ./tests/collections/jsonplaceholder-dev.json \
-            --reporters cli,htmlextra,ctrf-json \
-            --reporter-htmlextra-export ./newman/report.html \
-            --reporter-ctrf-json-output-dir ./ctrf \
-            --reporter-ctrf-json-output-file ctrf-report.json \
-            --reporter-ctrf-json-build-name "API Tests" \
-            --reporter-ctrf-json-app-name "API Testing Workflow"
-        continue-on-error: true
+          # Read collections from find step
+          COLLECTIONS='${{ steps.find-collections.outputs.collections }}'
+          
+          # Process each collection
+          echo $COLLECTIONS | jq -c '.[]' | while read -r collection; do
+            # Remove quotes from the collection path
+            collection=$(echo $collection | tr -d '"')
+            # Extract just the filename without path and extension
+            collection_name=$(basename "$collection" .json)
+            
+            echo "Running tests for collection: $collection_name"
+            
+            # Create directory for this collection's reports
+            mkdir -p "./newman/$collection_name"
+            mkdir -p "./ctrf/$collection_name"
+            
+            # Run Newman with collection-specific output paths
+            newman run "$collection" \
+              --reporters cli,htmlextra,ctrf-json \
+              --reporter-htmlextra-export "./newman/$collection_name/report.html" \
+              --reporter-ctrf-json-output-dir "./ctrf/$collection_name" \
+              --reporter-ctrf-json-output-file "ctrf-report.json" \
+              --reporter-ctrf-json-build-name "API Tests - $collection_name" \
+              --reporter-ctrf-json-app-name "API Testing Workflow" || true
+          done
+        shell: bash
       
       - name: Save Test Reports as Artifacts
         uses: actions/upload-artifact@v4
@@ -59,7 +81,7 @@ jobs:
       - name: Publish Test Report to Summary
         uses: ctrf-io/github-test-reporter@v1
         with:
-          report-path: './ctrf/*.json'
+          report-path: './ctrf/**/*.json'
           summary-report: true
           test-report: true
           failed-report: true
@@ -69,7 +91,7 @@ jobs:
       - name: Publish Test Report to PR
         uses: ctrf-io/github-test-reporter@v1
         with:
-          report-path: './ctrf/*.json'
+          report-path: './ctrf/**/*.json'
           pull-request-report: true
           pull-request: true
         env:
