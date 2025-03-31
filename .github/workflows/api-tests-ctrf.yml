@@ -22,12 +22,11 @@ jobs:
         with:
           node-version: '16'
       
-      - name: Install Newman, Reporters and CTRF Test Reporter
+      - name: Install Newman and Reporters
         run: |
           npm install -g newman
           npm install -g newman-reporter-htmlextra
           npm install -g newman-reporter-ctrf-json
-          npm install -g @ctrf/github-test-reporter
       
       - name: Create Directories
         run: |
@@ -78,63 +77,23 @@ jobs:
             ./newman/
             ./ctrf/
       
-      # Generate separate reports for each collection
-      - name: Publish Individual Collection Test Reports
-        id: publish-reports
-        run: |
-          # Find all collection directories
-          for collection_dir in ./ctrf/*/; do
-            collection_name=$(basename "$collection_dir")
-            echo "Publishing report for collection: $collection_name"
-            
-            # Create report for this collection
-            {
-              echo "## Test Results: $collection_name"
-              echo ""
-              echo "---"
-            } >> $GITHUB_STEP_SUMMARY
-            
-            # Run CTRF reporter for this specific collection
-            ctrf_report_path="./ctrf/$collection_name/ctrf-report.json"
-            
-            github-test-reporter \
-              --report-path="$ctrf_report_path" \
-              --summary-report=true \
-              --test-report=true \
-              --failed-report=true \
-              --title="$collection_name Tests" \
-              --output-file="./ctrf/$collection_name/summary.md"
-            
-            # Append the generated summary to GitHub step summary
-            cat "./ctrf/$collection_name/summary.md" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "---" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-          done
-        shell: bash
+      # Using the ctrf-io/github-test-reporter action
+      - name: Publish Test Report to Summary
+        uses: ctrf-io/github-test-reporter@v1
+        with:
+          report-path: './ctrf/**/*.json'
+          summary-report: true
+          test-report: true
+          failed-report: true
         if: always()
       
-      # Post individual results to PR comment for each collection
-      - name: Publish Collection Reports to PR
-        id: publish-pr
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            # Find all collection directories
-            for collection_dir in ./ctrf/*/; do
-              collection_name=$(basename "$collection_dir")
-              echo "Publishing PR comment for collection: $collection_name"
-              
-              # Create PR comment for this collection
-              ctrf_report_path="./ctrf/$collection_name/ctrf-report.json"
-              
-              github-test-reporter \
-                --report-path="$ctrf_report_path" \
-                --pull-request-report=true \
-                --pull-request=true \
-                --title="$collection_name Tests"
-            done
-          fi
-        shell: bash
+      # Post results to PR comment
+      - name: Publish Test Report to PR
+        uses: ctrf-io/github-test-reporter@v1
+        with:
+          report-path: './ctrf/**/*.json'
+          pull-request-report: true
+          pull-request: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         if: always() && github.event_name == 'pull_request'
