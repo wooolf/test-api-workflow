@@ -1,11 +1,10 @@
-name: API Tests with CTRF Test Reporter
+name: API Test Status Demo
 
 on:
   pull_request:
     branches: [main, master]
   workflow_dispatch:
 
-# Add permissions needed for PR comments
 permissions:
   contents: read
   pull-requests: write
@@ -30,21 +29,23 @@ jobs:
       
       - name: Create Directories
         run: |
-          mkdir -p ./tests/collections
           mkdir -p ./newman
           mkdir -p ./ctrf
       
-      - name: Run API Tests with CTRF Reporter
-        id: run-tests
+      - name: Find all Postman Collections
+        id: find-collections
         run: |
-          newman run ./tests/collections/jsonplaceholder-dev.json \
-            --reporters cli,htmlextra,ctrf-json \
-            --reporter-htmlextra-export ./newman/report.html \
-            --reporter-ctrf-json-output-dir ./ctrf \
-            --reporter-ctrf-json-output-file ctrf-report.json \
-            --reporter-ctrf-json-build-name "API Tests" \
-            --reporter-ctrf-json-app-name "API Testing Workflow"
+          # Find all .json files in the tests/collections folder
+          COLLECTIONS=$(find ./tests/collections -name "*.json" -type f | tr '\n' ' ')
+          echo "collections=$COLLECTIONS" >> $GITHUB_OUTPUT
+          echo "Found collections: $COLLECTIONS"
+      
+      - name: Run Newman Tests for All Collections
+        run: bash ./tests/scripts/run-collections.sh ${{ steps.find-collections.outputs.collections }}
         continue-on-error: true
+      
+      - name: Process Reports to Identify Flaky Tests and Other Statuses
+        run: node ./tests/scripts/combine-reports.js
       
       - name: Save Test Reports as Artifacts
         uses: actions/upload-artifact@v4
@@ -54,23 +55,31 @@ jobs:
             ./newman/
             ./ctrf/
       
-      # Using the ctrf-io/github-test-reporter action
-      - name: Publish Test Report to Summary
+      # Using the GitHub Test Reporter to show various report types
+      - name: Publish Test Status Summary
         uses: ctrf-io/github-test-reporter@v1
         with:
-          report-path: './ctrf/*.json'
+          report-path: './ctrf/combined-report.json'
           summary-report: true
           test-report: true
           failed-report: true
+          flaky-report: true
+          skipped-report: true
         if: always()
       
-      # Post results to PR comment
-      - name: Publish Test Report to PR
+      # Add detailed report to PR comment
+      - name: Publish Test Status Report to PR
         uses: ctrf-io/github-test-reporter@v1
         with:
-          report-path: './ctrf/*.json'
-          pull-request-report: true
+          report-path: './ctrf/combined-report.json'
           pull-request: true
+          pull-request-report: true
+          summary-report: false
+          test-report: false
+          failed-report: true
+          flaky-report: true
+          skipped-report: true
+          title: 'API Test Results'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         if: always() && github.event_name == 'pull_request'
