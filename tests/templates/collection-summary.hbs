@@ -1,12 +1,12 @@
 ## API Test Results by Collection
 
 ### Overall Summary
-{{>emoji}} **{{results.summary.passed}}** of **{{results.summary.tests}}** tests passed in **{{durationFormat results.summary.duration}}**
+**{{results.summary.passed}}** of **{{results.summary.tests}}** tests passed ({{percentFormat (percent results.summary.passed results.summary.tests)}})
 
 | Collection | Tests | Passed | Failed | Flaky | Skipped | Pending | Other | Duration |
 |------------|-------|--------|--------|-------|---------|---------|-------|----------|
 {{#each results.collections}}
-| **{{name}}** | {{total}} | {{passed}} {{#if passed}}✅{{/if}} | {{failed}} {{#if failed}}❌{{/if}} | {{flaky}} {{#if flaky}}🍂{{/if}} | {{skipped}} {{#if skipped}}⏭️{{/if}} | {{pending}} {{#if pending}}⏳{{/if}} | {{other}} {{#if other}}❓{{/if}} | {{durationFormat duration}} |
+| **{{name}}** | {{total}} | {{passed}} {{#if passed}}✅{{/if}} | {{failed}} {{#if failed}}❌{{/if}} | {{flaky}} {{#if flaky}}🍂{{/if}} | {{skipped}} {{#if skipped}}⏭️{{/if}} | {{pending}} {{#if pending}}⏳{{/if}} | {{other}} {{#if other}}❓{{/if}} | {{duration}}ms |
 {{/each}}
 
 {{#if (gt results.summary.failed 0)}}
