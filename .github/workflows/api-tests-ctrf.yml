@@ -1,0 +1,152 @@
+name: API Tests with CTRF Test Reporter (Per Collection)
+
+on:
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+# Add permissions needed for PR comments and summary updates
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read # Needed for job summaries
+  checks: write # Needed if using status-check: true
+
+jobs:
+  # Job to find collection files and make them available to the matrix
+  prepare-collections:
+    runs-on: ubuntu-latest
+    outputs:
+      collections: ${{ steps.find-collections.outputs.collections }}
+      collections_count: ${{ steps.find-collections.outputs.collections_count }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Find Collection Files
+        id: find-collections
+        run: |
+          # Create dummy files if tests/collections doesn't exist or is empty for testing
+          # mkdir -p ./tests/collections
+          # touch ./tests/collections/dummy1.json ./tests/collections/dummy2.json
+          
+          collections_list=$(find ./tests/collections -name "*.json" -type f | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          collections_count=$(echo "$collections_list" | jq 'length')
+          
+          if [ "$collections_count" -eq 0 ]; then
+            echo "WARNING: No collection files found in ./tests/collections"
+            # Output empty JSON array to avoid errors in the matrix strategy
+            collections_list="[]"
+          fi
+          
+          echo "collections=${collections_list}" >> $GITHUB_OUTPUT
+          echo "collections_count=${collections_count}" >> $GITHUB_OUTPUT
+          echo "Found $collections_count collection(s):"
+          echo "$collections_list" | jq -c '.[]? // empty' # Print each found collection or nothing if empty
+
+  # Job to run tests for each collection using a matrix
+  api-tests:
+    needs: prepare-collections
+    if: ${{ needs.prepare-collections.outputs.collections_count > 0 }} # Only run if collections were found
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        collection_path: ${{ fromJSON(needs.prepare-collections.outputs.collections) }}
+
+    name: Test ${{ matrix.collection_path }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Newman and Reporters
+        run: |
+          npm install -g newman
+          npm install -g newman-reporter-htmlextra
+          npm install -g newman-reporter-ctrf-json
+
+      # --- Run the setup script ---
+      - name: Setup Collection Environment
+        id: setup_env
+        run: |
+          # Ensure script is executable (belt-and-suspenders)
+          chmod +x ./tests/scripts/setup_collection_env.sh
+          ./tests/scripts/setup_collection_env.sh "${{ matrix.collection_path }}"
+        shell: bash
+
+      # --- Use outputs from the script ---
+      - name: Run API Tests with CTRF Reporter for ${{ steps.setup_env.outputs.collection_name }}
+        continue-on-error: true
+        id: run-tests
+        run: |
+          collection_path="${{ matrix.collection_path }}"
+          # Use outputs from the setup_env step
+          collection_name_orig="${{ steps.setup_env.outputs.collection_name }}"
+          newman_dir="${{ steps.setup_env.outputs.newman_dir }}"
+          ctrf_dir="${{ steps.setup_env.outputs.ctrf_dir }}"
+
+          echo "Running tests for collection: $collection_name_orig ($collection_path)"
+          echo "Newman dir: $newman_dir"
+          echo "CTRF dir: $ctrf_dir"
+
+          # Ensure the CTRF directory exists (redundant due to script, but safe)
+          mkdir -p "$ctrf_dir"
+
+          newman run "$collection_path" \
+            --reporters cli,htmlextra,ctrf-json \
+            --reporter-htmlextra-export "$newman_dir/report.html" \
+            --reporter-ctrf-json-output-dir "$ctrf_dir" \
+            --reporter-ctrf-json-output-file "ctrf-report.json" \
+            --reporter-ctrf-json-build-name "API Tests - $collection_name_orig" \
+            --reporter-ctrf-json-app-name "API Testing Workflow - ${{ github.repository }}"
+
+      - name: Save Test Report Artifacts for ${{ steps.setup_env.outputs.collection_name }}
+        uses: actions/upload-artifact@v4
+        with:
+          # Use sanitized_name from script output for artifact name
+          name: test-report-${{ steps.setup_env.outputs.sanitized_name }}
+          path: |
+            ${{ steps.setup_env.outputs.newman_dir }}/report.html
+            ${{ steps.setup_env.outputs.ctrf_dir }}/ctrf-report.json
+        if: always()
+
+      - name: Publish Test Report to Summary for ${{ steps.setup_env.outputs.collection_name }}
+        uses: ctrf-io/github-test-reporter@v1
+        with:
+          # Use ctrf_dir from script output
+          report-path: '${{ steps.setup_env.outputs.ctrf_dir }}/ctrf-report.json'
+          summary-report: true
+          test-report: true
+          failed-report: true
+          summary: true
+          # Use collection_name from script output for title
+          title: '📊 Results for ${{ steps.setup_env.outputs.collection_name }}'
+        if: always()
+
+      - name: Publish Test Report to PR for ${{ steps.setup_env.outputs.collection_name }}
+        uses: ctrf-io/github-test-reporter@v1
+        with:
+          # Use ctrf_dir from script output
+          report-path: '${{ steps.setup_env.outputs.ctrf_dir }}/ctrf-report.json'
+          pull-request-report: true
+          summary-report: true
+          failed-report: true
+          pull-request: true
+          # Use collection_name from script output for title
+          title: '📊 Results for ${{ steps.setup_env.outputs.collection_name }}'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: always() && github.event_name == 'pull_request'
+
+      - name: Check Newman exit status
+        if: steps.run-tests.outcome == 'failure'
+        run: |
+          # Use collection_name from script output
+          echo "Newman execution failed for collection: ${{ steps.setup_env.outputs.collection_name }}"
+          exit 1

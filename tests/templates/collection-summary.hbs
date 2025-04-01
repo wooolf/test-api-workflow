@@ -1,0 +1,109 @@
+# API Test Summary by Collection
+
+## Overall Summary
+
+| **Tests 📝** | **Passed ✅** | **Failed ❌** | **Skipped ⏭️** | **Pending ⏳** | **Other ❓** | **Flaky 🍂** | **Duration ⏱️** |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| {{ctrf.summary.tests}} | {{ctrf.summary.passed}} | {{ctrf.summary.failed}} | {{ctrf.summary.skipped}} | {{ctrf.summary.pending}} | {{ctrf.summary.other}} | {{countFlaky ctrf.tests}} | {{formatDuration ctrf.summary.start ctrf.summary.stop}} |
+
+## Collections Summary
+
+{{#each ctrf.collections}}
+### Collection: {{name}}
+
+| **Tests 📝** | **Passed ✅** | **Failed ❌** | **Skipped ⏭️** | **Pending ⏳** | **Other ❓** | **Flaky 🍂** | **Duration ⏱️** |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| {{total}} | {{passed}} | {{failed}} | {{skipped}} | {{pending}} | {{other}} | {{flaky}} | {{duration}}ms |
+{{/each}}
+
+## Failed Tests by Collection
+
+{{#each ctrf.collections}}
+{{#if failed}}
+### Failed in {{name}} ({{failed}} test(s))
+
+| **Test Name** | **Message** |
+| --- | --- |
+{{#each ../ctrf.tests}}
+{{#if (and (eq status "failed") (eq collectionName ../name))}}
+| {{originalName}} | {{#if message}}{{stripAnsi message}}{{else}}No failure message{{/if}} |
+{{/if}}
+{{/each}}
+{{/if}}
+{{/each}}
+
+## Flaky Tests by Collection
+
+{{#if (countFlaky ctrf.tests)}}
+{{#each ctrf.collections}}
+{{#if flaky}}
+### Flaky in {{name}} ({{flaky}} test(s))
+
+| **Test Name** | **Message** |
+| --- | --- |
+{{#each ../ctrf.tests}}
+{{#if (and flaky (eq collectionName ../name))}}
+| {{originalName}} | {{#if message}}{{stripAnsi message}}{{else}}No message{{/if}} |
+{{/if}}
+{{/each}}
+{{/if}}
+{{/each}}
+{{else}}
+No flaky tests detected ✨
+{{/if}}
+
+## Special Status Tests
+
+<details>
+  <summary>Click to see Pending, Skipped and Other test statuses</summary>
+
+  <br>
+
+### Pending Tests ({{ctrf.summary.pending}} test(s))
+{{#each ctrf.collections}}
+{{#if pending}}
+#### Collection: {{name}} ({{pending}} test(s))
+
+| **Test Name** | **Message** |
+| --- | --- |
+{{#each ../ctrf.tests}}
+{{#if (and (eq status "pending") (eq collectionName ../name))}}
+| {{originalName}} | {{#if message}}{{stripAnsi message}}{{else}}-{{/if}} |
+{{/if}}
+{{/each}}
+{{/if}}
+{{/each}}
+
+### Skipped Tests ({{ctrf.summary.skipped}} test(s))
+{{#each ctrf.collections}}
+{{#if skipped}}
+#### Collection: {{name}} ({{skipped}} test(s))
+
+| **Test Name** | **Message** |
+| --- | --- |
+{{#each ../ctrf.tests}}
+{{#if (and (eq status "skipped") (eq collectionName ../name))}}
+| {{originalName}} | {{#if message}}{{stripAnsi message}}{{else}}-{{/if}} |
+{{/if}}
+{{/each}}
+{{/if}}
+{{/each}}
+
+### Other Status Tests ({{ctrf.summary.other}} test(s))
+{{#each ctrf.collections}}
+{{#if other}}
+#### Collection: {{name}} ({{other}} test(s))
+
+| **Test Name** | **Message** |
+| --- | --- |
+{{#each ../ctrf.tests}}
+{{#if (and (eq status "other") (eq collectionName ../name))}}
+| {{originalName}} | {{#if message}}{{stripAnsi message}}{{else}}-{{/if}} |
+{{/if}}
+{{/each}}
+{{/if}}
+{{/each}}
+</details>
+
+---
+✨ [View full test report]({{github.buildUrl}})

@@ -1,0 +1,406 @@
+{
+  "info": {
+    "_postman_id": "c21d8b93-6fe4-4b5a-944a-0fc3157fe848",
+    "name": "Test Status Showcase",
+    "description": "A collection specifically demonstrating different test status types for visualization in GitHub Actions",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Passing Tests",
+      "item": [
+        {
+          "name": "GET Posts - All Pass",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is an array\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(Array.isArray(jsonData)).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://jsonplaceholder.typicode.com/posts",
+              "protocol": "https",
+              "host": [
+                "jsonplaceholder",
+                "typicode",
+                "com"
+              ],
+              "path": [
+                "posts"
+              ]
+            },
+            "description": "A simple request that should always pass"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Failed Tests",
+      "item": [
+        {
+          "name": "GET Posts - Intentional Failure",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "// This test will intentionally fail",
+                  "pm.test(\"FAILED: This test will intentionally fail\", function () {",
+                  "    pm.expect(pm.response.code).to.equal(404);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://jsonplaceholder.typicode.com/posts",
+              "protocol": "https",
+              "host": [
+                "jsonplaceholder",
+                "typicode",
+                "com"
+              ],
+              "path": [
+                "posts"
+              ]
+            },
+            "description": "This request will have a test that fails"
+          },
+          "response": []
+        },
+        {
+          "name": "GET Invalid ID - 404 Error",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// This test will pass as we expect a 404",
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "// This test will fail as we're trying to parse an empty response as JSON",
+                  "pm.test(\"FAILED: Parse empty response as JSON\", function () {",
+                  "    try {",
+                  "        var jsonData = pm.response.json();",
+                  "        pm.expect(jsonData).to.be.an('object');",
+                  "    } catch (e) {",
+                  "        pm.expect.fail('Failed to parse JSON: ' + e.message);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://jsonplaceholder.typicode.com/posts/999999",
+              "protocol": "https",
+              "host": [
+                "jsonplaceholder",
+                "typicode",
+                "com"
+              ],
+              "path": [
+                "posts",
+                "999999"
+              ]
+            },
+            "description": "This request goes to a non-existent post ID"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Flaky Tests",
+      "item": [
+        {
+          "name": "GET Comments - Timing Flaky Test",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "// This test is flaky because it sets an unrealistic timing constraint",
+                  "pm.test(\"FLAKY: Response time is under 20ms\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(20);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://jsonplaceholder.typicode.com/comments",
+              "protocol": "https",
+              "host": [
+                "jsonplaceholder",
+                "typicode",
+                "com"
+              ],
+              "path": [
+                "comments"
+              ]
+            },
+            "description": "This test will sometimes pass and sometimes fail based on network timing"
+          },
+          "response": []
+        },
+        {
+          "name": "GET Albums - Random Flaky Test",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "// This test is flaky because it relies on a random number",
+                  "pm.test(\"FLAKY: Random number test\", function () {",
+                  "    const random = Math.random();",
+                  "    console.log(`Random value: ${random}`);",
+                  "    pm.expect(random).to.be.lessThan(0.5); // 50% chance of passing",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://jsonplaceholder.typicode.com/albums",
+              "protocol": "https",
+              "host": [
+                "jsonplaceholder",
+                "typicode",
+                "com"
+              ],
+              "path": [
+                "albums"
+              ]
+            },
+            "description": "This test has a 50% chance of passing each time"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Pending Tests",
+      "item": [
+        {
+          "name": "GET Todos - Pending Implementation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "// This test is marked as pending with TODO",
+                  "pm.test(\"TODO: Implement task completion validation\", function () {",
+                  "    // This test logic is not implemented yet",
+                  "    console.log(\"This test logic is not implemented yet\");",
+                  "    // pm.expect(true).to.be.true;",
+                  "});",
+                  "",
+                  "// Another pending test with different format",
+                  "pm.test(\"TO BE IMPLEMENTED: Validate priority field format\", function () {",
+                  "    // Will be implemented when priority field is added",
+                  "    console.log(\"Waiting for API update to add priority field\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://jsonplaceholder.typicode.com/todos",
+              "protocol": "https",
+              "host": [
+                "jsonplaceholder",
+                "typicode",
+                "com"
+              ],
+              "path": [
+                "todos"
+              ]
+            },
+            "description": "This request contains pending tests marked with TODO"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Skipped Tests",
+      "item": [
+        {
+          "name": "GET Users - Conditionally Skipped",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "// Flag to control whether detailed tests run",
+                  "const RUN_DETAILED_TESTS = false;",
+                  "",
+                  "// Conditionally skip the test",
+                  "if (RUN_DETAILED_TESTS) {",
+                  "    pm.test(\"Validate user email formats\", function () {",
+                  "        const jsonData = pm.response.json();",
+                  "        jsonData.forEach(user => {",
+                  "            pm.expect(user.email).to.match(/^[\\w-\\.]+@([\\w-]+\\.)+[\\w-]{2,4}$/);",
+                  "        });",
+                  "    });",
+                  "} else {",
+                  "    console.log(\"SKIPPED: Detailed email validation tests\");",
+                  "}",
+                  "",
+                  "// Explicitly marked as skipped in the name",
+                  "pm.test(\"SKIP: Legacy user role validation\", function () {",
+                  "    // This test is skipped because the feature was deprecated",
+                  "    console.log(\"This test is for a deprecated feature\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://jsonplaceholder.typicode.com/users",
+              "protocol": "https",
+              "host": [
+                "jsonplaceholder",
+                "typicode",
+                "com"
+              ],
+              "path": [
+                "users"
+              ]
+            },
+            "description": "This request contains tests that are conditionally skipped"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6. Other Status Tests",
+      "item": [
+        {
+          "name": "GET Photos - Blocked & Other Statuses",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "// Test marked as BLOCKED",
+                  "pm.test(\"BLOCKED: Image dimension validation\", function () {",
+                  "    console.log(\"This test is blocked until image dimensions are added to API\");",
+                  "    // When this is implemented, we will verify image dimensions here",
+                  "});",
+                  "",
+                  "// Test with an unusual error condition",
+                  "try {",
+                  "    pm.test(\"Test with unexpected error\", function () {",
+                  "        // Simulate an unexpected condition",
+                  "        throw new Error(\"Unexpected test environment error\");",
+                  "        ",
+                  "        // This part will never run",
+                  "        pm.expect(true).to.be.true;",
+                  "    });",
+                  "} catch (e) {",
+                  "    console.log(\"Test encountered an unexpected error: \" + e.message);",
+                  "}",
+                  "",
+                  "// Test with a custom status marker",
+                  "pm.test(\"NEEDS-REVIEW: Photo URL validation approach\", function () {",
+                  "    // This test passes but needs design review",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData[0].url).to.include('https://');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://jsonplaceholder.typicode.com/photos",
+              "protocol": "https",
+              "host": [
+                "jsonplaceholder",
+                "typicode",
+                "com"
+              ],
+              "path": [
+                "photos"
+              ]
+            },
+            "description": "This request contains tests with unusual statuses"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
