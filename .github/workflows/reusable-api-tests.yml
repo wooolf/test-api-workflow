@@ -123,7 +123,7 @@ jobs:
       - name: Setup Collection Environment
         id: setup_env
         run: |
-          SETUP_SCRIPT_PATH=".github/workflows/reusable-repo-code/${{ inputs.test-script-path }}"
+          SETUP_SCRIPT_PATH="${{ inputs.test-script-path }}"
           echo "Executing setup script from: $SETUP_SCRIPT_PATH"
           chmod +x "$SETUP_SCRIPT_PATH"
           # Pass the collection path *relative to the caller-repo-code directory*
