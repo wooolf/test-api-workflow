@@ -12,7 +12,7 @@ permissions:
 jobs:
   test_api:
     name: Execute API Tests
-    uses: wooolf/test-api-workflow/.github/workflows/reusable-api-tests.yml@api-testing
+    uses: wooolf/test-api-workflow/.github/workflows/reusable-api-tests.yml@feature/api-testing
     with:
       collections-path: './tests/collections'
       node-version: '18'
