@@ -1,0 +1,37 @@
+# .github/workflows/call-api-tests.yml
+name: Run API Tests via Reusable Workflow
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test_api:
+    name: Execute API Tests
+    uses: .github/workflows/reusable-api-tests.yml@api-testing
+    with:
+      collections-path: './tests/collections'
+      node-version: '18'
+    secrets:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  # # Optional: Job that uses the output from the reusable workflow
+  # check_test_results:
+  #   name: Check Test Outcome
+  #   needs: test_api
+  #   runs-on: ubuntu-latest
+  #   if: always() # Run even if test_api failed
+  #   steps:
+  #     - name: Evaluate Reusable Workflow Outcome
+  #       run: |
+  #         echo "Reusable workflow overall outcome: ${{ needs.test_api.outputs.overall-outcome }}"
+  #         if [[ "${{ needs.test_api.outputs.overall-outcome }}" == "failure" ]]; then
+  #           echo "::error::API tests failed according to the reusable workflow."
+  #           exit 1
+  #         else
+  #           echo "API tests passed!"
+  #         fi

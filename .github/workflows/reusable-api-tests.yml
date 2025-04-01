@@ -1,0 +1,224 @@
+# .github/workflows/reusable-api-tests.yml
+name: Reusable API Test Workflow
+
+# Define trigger for reusable workflows
+on:
+  workflow_call:
+    # Define inputs the calling workflow can pass
+    inputs:
+      collections-path:
+        description: 'Path to the directory containing Postman collection JSON files'
+        required: false
+        type: string
+        default: './tests/collections' # Default path within the calling repo
+      node-version:
+        description: 'Node.js version to use'
+        required: false
+        type: string
+        default: '18'
+      test-script-path:
+        description: 'Path to the setup_collection_env.sh script within this reusable workflow repo'
+        required: false
+        type: string
+        default: './tests/scripts/setup_collection_env.sh' # Path RELATIVE TO THIS REPO
+    # Define secrets the calling workflow must provide
+    secrets:
+      github-token:
+        description: 'GITHUB_TOKEN needed for PR comments'
+        required: true
+    # Define outputs the reusable workflow can produce
+    outputs:
+      overall-outcome:
+        description: "The overall outcome of the API tests matrix (success or failure)"
+        value: ${{ jobs.report-outcome.outputs.outcome }}
+
+# Define permissions needed by THIS reusable workflow
+permissions:
+  contents: read         # To checkout code in the calling repo
+  pull-requests: write   # To post comments on PRs in the calling repo
+  actions: read          # To read job summaries
+  checks: write          # To create status checks (optional)
+
+jobs:
+  # Job to find collection files in the CALLING repository
+  prepare-collections:
+    runs-on: ubuntu-latest
+    outputs:
+      collections: ${{ steps.find-collections.outputs.collections }}
+      collections_count: ${{ steps.find-collections.outputs.collections_count }}
+    steps:
+      # Checkout the code of the CALLING repository
+      - name: Checkout Caller Repository Code
+        uses: actions/checkout@v4
+
+      - name: Find Collection Files in Caller Repo
+        id: find-collections
+        run: |
+          COLLECTIONS_DIR="${{ inputs.collections-path }}"
+          echo "Searching for collections in: $COLLECTIONS_DIR"
+          if [ ! -d "$COLLECTIONS_DIR" ]; then
+             echo "WARNING: Collections directory '$COLLECTIONS_DIR' not found."
+             collections_list="[]"
+             collections_count=0
+          else
+            collections_list=$(find "$COLLECTIONS_DIR" -maxdepth 1 -name "*.json" -type f | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            collections_count=$(echo "$collections_list" | jq 'length')
+          fi
+
+          if [ "$collections_count" -eq 0 ]; then
+            echo "WARNING: No collection files found in $COLLECTIONS_DIR"
+            collections_list="[]" # Ensure output is valid JSON array
+          fi
+
+          echo "collections=${collections_list}" >> $GITHUB_OUTPUT
+          echo "collections_count=${collections_count}" >> $GITHUB_OUTPUT
+          echo "Found $collections_count collection(s):"
+          echo "$collections_list" | jq -c '.[]? // empty'
+        shell: bash
+
+  # Job to run tests for each collection using a matrix
+  api-tests:
+    needs: prepare-collections
+    if: ${{ needs.prepare-collections.outputs.collections_count > 0 }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Matrix now iterates over paths found in the CALLER repo
+        collection_path: ${{ fromJSON(needs.prepare-collections.outputs.collections) }}
+
+    name: Test ${{ matrix.collection_path }}
+
+    steps:
+      # Step 1: Checkout the code of the REUSABLE workflow repository
+      # This is needed to access the setup script defined in *this* repo
+      - name: Checkout Reusable Workflow Code
+        uses: actions/checkout@v4
+        with:
+          # Checkout the repo containing THIS workflow file
+          repository: ${{ github.workflow_repository }} # Dynamically gets the repo hosting the workflow
+          ref: ${{ github.workflow_sha }} # Checks out the specific commit running the workflow
+          path: ./.github/workflows/reusable-repo-code # Checkout to a sub-directory to avoid conflicts
+
+      # Step 2: Checkout the code of the CALLING repository
+      # This is needed to access the collection files and the API code being tested
+      - name: Checkout Caller Repository Code
+        uses: actions/checkout@v4
+        with:
+          path: ./caller-repo-code # Checkout caller's code to a specific directory
+
+      # Setup Node using input
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install Newman and Reporters
+        run: |
+          npm install -g newman
+          npm install -g newman-reporter-htmlextra
+          npm install -g newman-reporter-ctrf-json
+
+      # Run the setup script FROM THE REUSABLE WORKFLOW REPO
+      - name: Setup Collection Environment
+        id: setup_env
+        run: |
+          SETUP_SCRIPT_PATH=".github/workflows/reusable-repo-code/${{ inputs.test-script-path }}"
+          echo "Executing setup script from: $SETUP_SCRIPT_PATH"
+          chmod +x "$SETUP_SCRIPT_PATH"
+          # Pass the collection path *relative to the caller-repo-code directory*
+          # The script expects the path as passed by the matrix, which is relative to the caller repo root
+          "$SETUP_SCRIPT_PATH" "${{ matrix.collection_path }}"
+        working-directory: ./caller-repo-code # Run script within the checked-out caller code context
+        shell: bash
+
+      # Run Newman using paths relative to the CALLER repo checkout
+      - name: Run API Tests for ${{ steps.setup_env.outputs.collection_name }}
+        continue-on-error: true
+        id: run-tests
+        run: |
+          collection_path_in_runner="${{ matrix.collection_path }}" # This path is relative to working-directory
+          collection_name_orig="${{ steps.setup_env.outputs.collection_name }}"
+          # Directories created by the script are relative to the working-directory
+          newman_dir="${{ steps.setup_env.outputs.newman_dir }}"
+          ctrf_dir="${{ steps.setup_env.outputs.ctrf_dir }}"
+
+          echo "Running tests for collection: $collection_name_orig ($collection_path_in_runner)"
+          echo "Newman dir: $newman_dir"
+          echo "CTRF dir: $ctrf_dir"
+
+          # Newman runs within the caller-repo-code directory
+          newman run "$collection_path_in_runner" \
+            --reporters cli,htmlextra,ctrf-json \
+            --reporter-htmlextra-export "$newman_dir/report.html" \
+            --reporter-ctrf-json-output-dir "$ctrf_dir" \
+            --reporter-ctrf-json-output-file "ctrf-report.json" \
+            --reporter-ctrf-json-build-name "API Tests - $collection_name_orig" \
+            # Use GITHUB_REPOSITORY which refers to the CALLER repo
+            --reporter-ctrf-json-app-name "API Testing Workflow - ${{ github.repository }}"
+        working-directory: ./caller-repo-code # Run newman where the collections and script outputs are
+
+      # Upload artifacts from the paths created within the caller-repo-code directory
+      - name: Save Test Report Artifacts for ${{ steps.setup_env.outputs.collection_name }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-${{ steps.setup_env.outputs.sanitized_name }}
+          # Paths are relative to the root, but created within caller-repo-code
+          path: |
+            ./caller-repo-code/${{ steps.setup_env.outputs.newman_dir }}/report.html
+            ./caller-repo-code/${{ steps.setup_env.outputs.ctrf_dir }}/ctrf-report.json
+        if: always()
+
+      # Publish reports using paths relative to the caller-repo-code directory
+      - name: Publish Test Report to Summary for ${{ steps.setup_env.outputs.collection_name }}
+        uses: ctrf-io/github-test-reporter@v1
+        with:
+          report-path: './caller-repo-code/${{ steps.setup_env.outputs.ctrf_dir }}/ctrf-report.json'
+          summary-report: true
+          test-report: true
+          failed-report: true
+          summary: true
+          title: '📊 Results for ${{ steps.setup_env.outputs.collection_name }}'
+        if: always()
+
+      - name: Publish Test Report to PR for ${{ steps.setup_env.outputs.collection_name }}
+        uses: ctrf-io/github-test-reporter@v1
+        with:
+          report-path: './caller-repo-code/${{ steps.setup_env.outputs.ctrf_dir }}/ctrf-report.json'
+          pull-request-report: true
+          summary-report: true
+          failed-report: true
+          pull-request: true
+          title: '📊 Results for ${{ steps.setup_env.outputs.collection_name }}'
+        env:
+          # Use the secret passed from the caller
+          GITHUB_TOKEN: ${{ secrets.github-token }}
+        if: always() && github.event_name == 'pull_request' # Check event name in CALLER context
+
+      - name: Check Newman exit status
+        if: steps.run-tests.outcome == 'failure'
+        run: |
+          echo "Newman execution failed for collection: ${{ steps.setup_env.outputs.collection_name }}"
+          exit 1
+
+  # Final job to determine overall outcome and set the output
+  report-outcome:
+    name: Report Overall Outcome
+    needs: api-tests
+    runs-on: ubuntu-latest
+    # Crucially, run this even if the matrix job fails (some tests failed)
+    if: always()
+    outputs:
+      outcome: ${{ steps.check_matrix.outputs.outcome }}
+    steps:
+      - name: Check matrix outcome
+        id: check_matrix
+        run: |
+          echo "Matrix job outcome: ${{ needs.api-tests.result }}"
+          if [[ "${{ needs.api-tests.result }}" == "success" ]]; then
+            echo "outcome=success" >> $GITHUB_OUTPUT
+          else
+            # Consider skipped (if no collections found) also as non-failure for the output? Or failure?
+            # Let's treat skipped/cancelled/failure all as failure for the output.
+            echo "outcome=failure" >> $GITHUB_OUTPUT
+          fi
